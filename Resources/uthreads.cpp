@@ -2,6 +2,10 @@
 // Created by amare on 6/5/2024.
 //
 
+enum THREAD_STATES {
+    READY, RUNNING, BLOCKED
+};
+
 /**
  * @brief Represents a single thread.
  */
