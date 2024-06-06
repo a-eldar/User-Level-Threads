@@ -10,9 +10,28 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <setjmp.h>
+
 #define FAILURE (-1)
 #define SUCCESS 0
 #define USEC_IN_SEC 1000000
+
+
+typedef unsigned long address_t;
+#define JB_SP 6
+#define JB_PC 7
+
+/* A translation is required when using an address of a variable.
+   Use this as a black box in your code. */
+address_t translate_address(address_t addr)
+{
+    address_t ret;
+    asm volatile("xor    %%fs:0x30,%0\n"
+                 "rol    $0x11,%0\n"
+            : "=g" (ret)
+            : "0" (addr));
+    return ret;
+}
 
 typedef int micro_sec;
 
@@ -29,12 +48,15 @@ enum ThreadState {
 class Thread {
     ThreadState state;
     int tid;
+    char* stack;
+    sigjmp_buf env;
 
 public:
     /** Creates new Thread with state=READY */
     explicit Thread(int tid) {
         this->tid = tid;
         this->state = READY;
+        this->stack = new char[STACK_SIZE];
     }
 
     ThreadState getState() const {
@@ -45,8 +67,18 @@ public:
         return tid;
     }
 
+    char* getStack() {
+        return stack;
+    }
+
     void setState(ThreadState new_state) {
         state = new_state;
+    }
+
+    sigjmp_buf& getEnv() { return env; }
+
+    ~Thread() {
+        delete[] stack;
     }
 };
 
@@ -77,7 +109,8 @@ public:
         // Perhaps this->quantum is useless.
         // Perhaps can be used once in the lib function.
 
-        threads[0] = new Thread(0);
+        threads[0] = new Thread(0); // TODO: What is the main entry point?
+        sigsetjmp(threads[0]->getEnv(), 1);
         threads[0]->setState(RUNNING);
         running_thread_tid = 0;
         num_threads = 1;
@@ -87,10 +120,11 @@ public:
      * @brief Adds a new thread
      * @return tid or FAILURE
      */
-    int spawnThread() {
+    int spawnThread(thread_entry_point entry_point) {
         int tid = findMinAvailableTid();
         if (tid == FAILURE) return FAILURE;
         threads[tid] = new Thread(tid);
+        setup_thread(tid, threads[tid]->getStack(), entry_point);
         thread_queue.push_back(tid);
         num_threads++;
         return tid;
@@ -157,6 +191,19 @@ private:
 
         return FAILURE;
     }
+
+    void setup_thread(int tid, char *stack, thread_entry_point entry_point)
+    {
+        // initializes env[tid] to use the right stack, and to run from the function 'entry_point', when we'll use
+        // siglongjmp to jump into the thread.
+        address_t sp = (address_t) stack + STACK_SIZE - sizeof(address_t);
+        address_t pc = (address_t) entry_point;
+        sigjmp_buf& env = threads[tid]->getEnv();
+        sigsetjmp(threads[tid]->getEnv(), 1);
+        (env->__jmpbuf)[JB_SP] = translate_address(sp);
+        (env->__jmpbuf)[JB_PC] = translate_address(pc);
+        sigemptyset(&env->__saved_mask);
+    }
 };
 
 
@@ -206,7 +253,7 @@ int uthread_init(int quantum_usecs) {
 }
 
 int uthread_spawn(thread_entry_point entry_point) {
-    return manager.spawnThread();
+    return manager.spawnThread(entry_point);
 }
 
 int uthread_terminate(int tid) {
