@@ -226,5 +226,5 @@ int uthread_resume(int tid) {
 }
 
 int uthread_sleep(int num_quantums) {
-    return manager.sleepThread(int num_quantums); // TODO: how?
+    return manager.sleepThread(num_quantums); // TODO: how?
 }
