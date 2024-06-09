@@ -182,6 +182,10 @@ public:
         return SUCCESS;
     }
 
+    int getRunningTid() const {
+        return running_thread_tid;
+    }
+
     ~UThreadManager() {
         for (const auto& thread_ptr : threads) {
             delete thread_ptr;
@@ -236,6 +240,7 @@ private:
         thread_queue.push_back(running_thread_tid);
         running_thread_tid = popReadyThread();
         threads[running_thread_tid]->setState(RUNNING);
+        siglongjmp(threads[running_thread_tid]->getEnv(), 1);
     }
 };
 
@@ -307,4 +312,8 @@ int uthread_resume(int tid) {
 
 int uthread_sleep(int num_quantums) {
     return manager.sleepThread(num_quantums); // TODO: how?
+}
+
+int uthread_get_tid() {
+    return manager.getRunningTid();
 }
