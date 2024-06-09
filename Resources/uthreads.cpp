@@ -93,6 +93,7 @@ public:
 class UThreadManager {
     std::vector<Thread*> threads;
     std::list<int> thread_queue;
+    std::list<std::pair<int, int>> sleeping_threads;
     micro_sec quantum;
     int num_threads;
     int running_thread_tid;
@@ -131,12 +132,9 @@ public:
     }
 
     void expireQuantum() {
+        reduceSleep();
         if (thread_queue.empty()) return;
-        threads[running_thread_tid]->setState(READY);
-        thread_queue.push_back(running_thread_tid);
-        running_thread_tid = thread_queue.front();
-        thread_queue.pop_front();
-        threads[running_thread_tid]->setState(RUNNING);
+        queueRunningThread();
     }
 
     /** @brief terminates thread with that tid. Should not be called with 0 (main thread)
@@ -176,6 +174,14 @@ public:
         return SUCCESS;
     }
 
+    int sleepThread(int num_quantums) {
+        if (running_thread_tid == 0) return FAILURE;
+        sleeping_threads.emplace_back(running_thread_tid, num_quantums);
+        threads[running_thread_tid]->setState(BLOCKED);
+        running_thread_tid = popReadyThread();
+        return SUCCESS;
+    }
+
     ~UThreadManager() {
         for (const auto& thread_ptr : threads) {
             delete thread_ptr;
@@ -184,6 +190,13 @@ public:
 
 
 private:
+    int popReadyThread() {
+        if (thread_queue.empty()) return FAILURE;
+        int tid = thread_queue.front();
+        thread_queue.pop_front();
+        return tid;
+    }
+
     int findMinAvailableTid() {
         for (int i = 0; i < MAX_THREAD_NUM; i++)
             if (threads[i] == nullptr)
@@ -203,6 +216,26 @@ private:
         (env->__jmpbuf)[JB_SP] = translate_address(sp);
         (env->__jmpbuf)[JB_PC] = translate_address(pc);
         sigemptyset(&env->__saved_mask);
+    }
+
+    void reduceSleep() {
+        for (auto i = sleeping_threads.begin(); i != sleeping_threads.end(); i++) {
+            i->second--;
+            int tid = i->first;
+            int num_quantums = i->second;
+            if (!num_quantums) {
+                threads[tid]->setState(READY);
+                thread_queue.push_back(tid);
+                sleeping_threads.erase(i--);
+            }
+        }
+    }
+
+    void queueRunningThread() {
+        threads[running_thread_tid]->setState(READY);
+        thread_queue.push_back(running_thread_tid);
+        running_thread_tid = popReadyThread();
+        threads[running_thread_tid]->setState(RUNNING);
     }
 };
 
