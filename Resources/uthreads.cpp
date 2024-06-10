@@ -157,12 +157,16 @@ public:
      */
     int terminateThread(int tid) {
         if (!isTidValid(tid, false)) return FAILURE;
+
         if (threads[tid]->getState() == READY)
             thread_queue.remove(tid);
         sleeping_threads.remove_if([&tid](const std::pair<int, int>& pair) {return pair.first == tid;});
         delete threads[tid];
+        threads[tid] = nullptr;
         num_threads--;
 
+        num_quantums++;
+        queueRunningThread();
         return SUCCESS;
     }
 
@@ -170,6 +174,7 @@ public:
         if (!isTidValid(tid, false)) return FAILURE;
 
         if (threads[tid]->getState() == RUNNING) {
+            num_quantums++;
             queueRunningThread(BLOCKED);
             // TODO: Reset timer...
         }
@@ -279,7 +284,7 @@ private:
                 thread_queue.push_back(running_thread_tid);
             ret_value = sigsetjmp(threads[running_thread_tid]->getEnv(), 1);
         }
-        else ret_value = 1;
+        else ret_value = 0;
         if (ret_value == 0) {
             running_thread_tid = popReadyThread();
             threads[running_thread_tid]->addQuantum();
