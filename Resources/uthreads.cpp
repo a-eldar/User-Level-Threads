@@ -97,11 +97,13 @@ class UThreadManager {
     micro_sec quantum;
     int num_threads;
     int running_thread_tid;
+    int num_quantums;
 
 public:
     UThreadManager() : threads(MAX_THREAD_NUM, nullptr) {
-    // Preallocate MAX_THREADS_NUM spaces for threads
-    num_threads = 0;
+        // Preallocate MAX_THREADS_NUM spaces for threads
+        num_threads = 0;
+        num_quantums = 0;
     }
 
     /** @brief Initialize UThreads lib (no validity check) */
@@ -132,6 +134,7 @@ public:
     }
 
     void expireQuantum() {
+        num_quantums++;
         reduceSleep();
         if (thread_queue.empty()) return;
         queueRunningThread();
@@ -185,6 +188,8 @@ public:
     int getRunningTid() const {
         return running_thread_tid;
     }
+
+    int getNumQuantums() const {return num_quantums;}
 
     ~UThreadManager() {
         for (const auto& thread_ptr : threads) {
@@ -316,4 +321,8 @@ int uthread_sleep(int num_quantums) {
 
 int uthread_get_tid() {
     return manager.getRunningTid();
+}
+
+int uthread_get_total_quantums() {
+    return manager.getNumQuantums();
 }
