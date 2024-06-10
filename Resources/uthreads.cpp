@@ -149,7 +149,7 @@ public:
         if (!thread_queue.empty()) {
             queueRunningThread();
         }
-        threads[running_thread_tid]->addQuantum();
+        else threads[running_thread_tid]->addQuantum();
     }
 
     /** @brief terminates thread with that tid. Should not be called with 0 (main thread)
@@ -159,20 +159,22 @@ public:
         if (!isTidValid(tid, false)) return FAILURE;
         if (threads[tid]->getState() == READY)
             thread_queue.remove(tid);
+        sleeping_threads.remove_if([&tid](const std::pair<int, int>& pair) {return pair.first == tid;});
         delete threads[tid];
         num_threads--;
+
         return SUCCESS;
     }
 
     int blockThread(int tid) {
         if (!isTidValid(tid, false)) return FAILURE;
 
-        if (threads[tid]->getState() == RUNNING)
-            expireQuantum();
+        if (threads[tid]->getState() == RUNNING) {
+            queueRunningThread(BLOCKED);
             // TODO: Reset timer...
+        }
         if (threads[tid]->getState() == READY)
             thread_queue.remove(tid);
-        threads[tid]->setState(BLOCKED);
         return SUCCESS;
     }
 
@@ -190,8 +192,7 @@ public:
         if (running_thread_tid == 0) return FAILURE;
         if (threads[running_thread_tid]->getState() == BLOCKED) return SUCCESS;
         sleeping_threads.emplace_back(running_thread_tid, num_quantums);
-        threads[running_thread_tid]->setState(BLOCKED);
-        running_thread_tid = popReadyThread();
+        blockThread(running_thread_tid);
         return SUCCESS;
     }
 
@@ -267,12 +268,24 @@ private:
         }
     }
 
-    void queueRunningThread() {
-        threads[running_thread_tid]->setState(READY);
-        thread_queue.push_back(running_thread_tid);
-        running_thread_tid = popReadyThread();
-        threads[running_thread_tid]->setState(RUNNING);
-        siglongjmp(threads[running_thread_tid]->getEnv(), 1);
+    /**
+     * @param new_state - new state for the previous running thread (READY/BLOCKED)
+     */
+    void queueRunningThread(ThreadState new_state=READY) {
+        int ret_value;
+        if (threads[running_thread_tid]) {
+            threads[running_thread_tid]->setState(new_state);
+            if (new_state == READY)
+                thread_queue.push_back(running_thread_tid);
+            ret_value = sigsetjmp(threads[running_thread_tid]->getEnv(), 1);
+        }
+        else ret_value = 1;
+        if (ret_value == 0) {
+            running_thread_tid = popReadyThread();
+            threads[running_thread_tid]->addQuantum();
+            threads[running_thread_tid]->setState(RUNNING);
+            siglongjmp(threads[running_thread_tid]->getEnv(), 1);
+        }
     }
 };
 
