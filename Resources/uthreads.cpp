@@ -50,6 +50,7 @@ class Thread {
     int tid;
     char* stack;
     sigjmp_buf env;
+    int num_quantums;
 
 public:
     /** Creates new Thread with state=READY */
@@ -57,6 +58,7 @@ public:
         this->tid = tid;
         this->state = READY;
         this->stack = new char[STACK_SIZE];
+        num_quantums = 0;
     }
 
     ThreadState getState() const {
@@ -74,6 +76,12 @@ public:
     void setState(ThreadState new_state) {
         state = new_state;
     }
+
+    void addQuantum() {
+        num_quantums++;
+    }
+
+    int getNumQuantums() const { return num_quantums; }
 
     sigjmp_buf& getEnv() { return env; }
 
@@ -117,6 +125,7 @@ public:
         threads[0]->setState(RUNNING);
         running_thread_tid = 0;
         num_threads = 1;
+        num_quantums = 1;
     }
 
     /**
@@ -144,8 +153,7 @@ public:
      * @return SUCCESS or FAILURE
      */
     int terminateThread(int tid) {
-        if (tid <= 0 || tid >= MAX_THREAD_NUM) return FAILURE;
-        if (threads[tid] == nullptr) return FAILURE;
+        if (!isTidValid(tid, false)) return FAILURE;
         if (threads[tid]->getState() == READY)
             thread_queue.remove(tid);
         delete threads[tid];
@@ -154,8 +162,7 @@ public:
     }
 
     int blockThread(int tid) {
-        if (tid <= 0 || tid >= MAX_THREAD_NUM) return FAILURE;
-        if (threads[tid] == nullptr) return FAILURE;
+        if (!isTidValid(tid, false)) return FAILURE;
 
         if (threads[tid]->getState() == RUNNING)
             expireQuantum();
@@ -167,8 +174,7 @@ public:
     }
 
     int resumeThread(int tid) {
-        if (tid < 0 || tid >= MAX_THREAD_NUM) return FAILURE;
-        if (threads[tid] == nullptr) return FAILURE;
+        if (!isTidValid(tid, true)) return FAILURE;
 
         if (threads[tid]->getState() == BLOCKED) {
             threads[tid]->setState(READY);
@@ -191,6 +197,12 @@ public:
 
     int getNumQuantums() const {return num_quantums;}
 
+    int getNumRunningQuantums(int tid) const {
+        if (!isTidValid(tid, true)) return FAILURE;
+
+        return threads[tid]->getNumQuantums();
+    }
+
     ~UThreadManager() {
         for (const auto& thread_ptr : threads) {
             delete thread_ptr;
@@ -199,6 +211,17 @@ public:
 
 
 private:
+    /** @param tid the thread id to check
+     * @param with0 is 0 valid
+     * @return false if tid is not valid else true
+     */
+    bool isTidValid(int tid, bool with0) const {
+        if (tid < 0 || tid >= MAX_THREAD_NUM) return false;
+        if (!with0 & (tid == 0)) return false;
+        if (threads[tid] == nullptr) return false;
+        return true;
+    }
+
     int popReadyThread() {
         if (thread_queue.empty()) return FAILURE;
         int tid = thread_queue.front();
@@ -229,10 +252,10 @@ private:
 
     void reduceSleep() {
         for (auto i = sleeping_threads.begin(); i != sleeping_threads.end(); i++) {
+            // Pairs of <Tid, Quantums Remaining>
             i->second--;
             int tid = i->first;
-            int num_quantums = i->second;
-            if (!num_quantums) {
+            if (!i->second) {
                 threads[tid]->setState(READY);
                 thread_queue.push_back(tid);
                 sleeping_threads.erase(i--);
@@ -245,6 +268,7 @@ private:
         thread_queue.push_back(running_thread_tid);
         running_thread_tid = popReadyThread();
         threads[running_thread_tid]->setState(RUNNING);
+        threads[running_thread_tid]->addQuantum();
         siglongjmp(threads[running_thread_tid]->getEnv(), 1);
     }
 };
@@ -325,4 +349,8 @@ int uthread_get_tid() {
 
 int uthread_get_total_quantums() {
     return manager.getNumQuantums();
+}
+
+int uthread_get_quantums(int tid) {
+    return manager.getNumRunningQuantums(tid);
 }
