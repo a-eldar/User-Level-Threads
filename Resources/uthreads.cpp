@@ -53,7 +53,7 @@ class Thread {
     int num_quantums;
 
 public:
-    /** Creates new Thread with state=READY */
+    /** Creates new Thread with state=READY, num_quantums=0 */
     explicit Thread(int tid) {
         this->tid = tid;
         this->state = READY;
@@ -120,12 +120,13 @@ public:
         // Perhaps this->quantum is useless.
         // Perhaps can be used once in the lib function.
 
-        threads[0] = new Thread(0); // TODO: What is the main entry point?
-        sigsetjmp(threads[0]->getEnv(), 1);
+        threads[0] = new Thread(0);
         threads[0]->setState(RUNNING);
+        threads[0]->addQuantum();
         running_thread_tid = 0;
         num_threads = 1;
         num_quantums = 1;
+        sigsetjmp(threads[0]->getEnv(), 1);
     }
 
     /**
@@ -145,8 +146,10 @@ public:
     void expireQuantum() {
         num_quantums++;
         reduceSleep();
-        if (thread_queue.empty()) return;
-        queueRunningThread();
+        if (!thread_queue.empty()) {
+            queueRunningThread();
+        }
+        threads[running_thread_tid]->addQuantum();
     }
 
     /** @brief terminates thread with that tid. Should not be called with 0 (main thread)
@@ -185,6 +188,7 @@ public:
 
     int sleepThread(int num_quantums) {
         if (running_thread_tid == 0) return FAILURE;
+        if (threads[running_thread_tid]->getState() == BLOCKED) return SUCCESS;
         sleeping_threads.emplace_back(running_thread_tid, num_quantums);
         threads[running_thread_tid]->setState(BLOCKED);
         running_thread_tid = popReadyThread();
@@ -268,7 +272,6 @@ private:
         thread_queue.push_back(running_thread_tid);
         running_thread_tid = popReadyThread();
         threads[running_thread_tid]->setState(RUNNING);
-        threads[running_thread_tid]->addQuantum();
         siglongjmp(threads[running_thread_tid]->getEnv(), 1);
     }
 };
