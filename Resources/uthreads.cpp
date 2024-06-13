@@ -16,6 +16,9 @@
 #define SUCCESS 0
 #define USEC_IN_SEC 1000000
 
+#define ENSURE(PTR, MSG) if ((PTR) == nullptr) { std::cerr << "system error: " << (MSG) << "\n"; exit(1); }
+#define THREAD_ERROR(MSG) { std::cerr << "thread library error: " << (MSG) << "\n"; return FAILURE; }
+
 
 typedef unsigned long address_t;
 #define JB_SP 6
@@ -58,6 +61,7 @@ public:
         this->tid = tid;
         this->state = READY;
         this->stack = new char[STACK_SIZE];
+        ENSURE(stack, "Failed to allocate thread stack.")
         num_quantums = 0;
     }
 
@@ -121,6 +125,7 @@ public:
         // Perhaps can be used once in the lib function.
 
         threads[0] = new Thread(0);
+        ENSURE(threads[0], "Failed to allocate initial thread.")
         threads[0]->setState(RUNNING);
         threads[0]->addQuantum();
         running_thread_tid = 0;
@@ -135,8 +140,9 @@ public:
      */
     int spawnThread(thread_entry_point entry_point) {
         int tid = findMinAvailableTid();
-        if (tid == FAILURE) return FAILURE;
+        if (tid == FAILURE) THREAD_ERROR("Thread limit reached.")
         threads[tid] = new Thread(tid);
+        ENSURE(threads[tid], "Failed to allocate new thread.")
         setup_thread(tid, threads[tid]->getStack(), entry_point);
         thread_queue.push_back(tid);
         num_threads++;
@@ -156,7 +162,7 @@ public:
      * @return SUCCESS or FAILURE
      */
     int terminateThread(int tid) {
-        if (!isTidValid(tid, false)) return FAILURE;
+        if (!isTidValid(tid, false)) THREAD_ERROR("Invalid thread id.")
 
         if (threads[tid]->getState() == READY)
             thread_queue.remove(tid);
@@ -173,12 +179,11 @@ public:
 
 
     int blockThread(int tid, bool to_sleep=false) {
-        if (!isTidValid(tid, false)) return FAILURE;
+        if (!isTidValid(tid, false)) THREAD_ERROR("Invalid thread id.")
 
         if (threads[tid]->getState() == RUNNING) {
             num_quantums++;
             queueRunningThread(BLOCKED);
-            // TODO: Reset timer...
         }
         if (threads[tid]->getState() == READY){
             threads[tid]->setState(BLOCKED);
@@ -191,7 +196,7 @@ public:
     }
 
     int resumeThread(int tid) {
-        if (!isTidValid(tid, true)) return FAILURE;
+        if (!isTidValid(tid, true)) THREAD_ERROR("Invalid thread id.")
 
         if (threads[tid]->getState() == BLOCKED) {
             threads[tid]->setState(READY);
@@ -201,7 +206,7 @@ public:
     }
 
     int sleepThread(int num_quantums) {
-        if (running_thread_tid == 0) return FAILURE;
+        if (running_thread_tid == 0) THREAD_ERROR("Not allowed to sleep main thread.")
         if (threads[running_thread_tid]->getState() == BLOCKED) return SUCCESS;
         sleeping_threads.emplace_back(running_thread_tid, num_quantums);
         blockThread(running_thread_tid, true);
@@ -215,7 +220,7 @@ public:
     int getNumQuantums() const {return num_quantums;}
 
     int getNumRunningQuantums(int tid) const {
-        if (!isTidValid(tid, true)) return FAILURE;
+        if (!isTidValid(tid, true)) THREAD_ERROR("Invalid thread id.")
 
         return threads[tid]->getNumQuantums();
     }
@@ -323,7 +328,7 @@ void timer_handler(int sig) {
 }
 
 int uthread_init(int quantum_usecs) {
-    if (quantum_usecs <= 0) return FAILURE;
+    if (quantum_usecs <= 0) THREAD_ERROR("Quantum must be positive.")
     manager.init(quantum_usecs);
 
 
@@ -332,10 +337,7 @@ int uthread_init(int quantum_usecs) {
 
     // Install timer_handler as the signal handler for SIGVTALRM.
     sa.sa_handler = &timer_handler;
-    if (sigaction(SIGVTALRM, &sa, NULL) < 0)
-    {
-        return FAILURE;
-    }
+    if (sigaction(SIGVTALRM, &sa, NULL) < 0) THREAD_ERROR("Sigaction error.")
 
     timer.it_value.tv_sec = quantum_usecs / USEC_IN_SEC;        // first time interval, seconds part
     timer.it_value.tv_usec = quantum_usecs % USEC_IN_SEC;        // first time interval, microseconds part
@@ -343,10 +345,7 @@ int uthread_init(int quantum_usecs) {
     timer.it_interval.tv_sec = quantum_usecs / USEC_IN_SEC;    // following time intervals, seconds part
     timer.it_interval.tv_usec = quantum_usecs % USEC_IN_SEC;    // following time intervals, microseconds part
 
-    if (setitimer(ITIMER_VIRTUAL, &timer, NULL))
-    {
-        return FAILURE;
-    }
+    if (setitimer(ITIMER_VIRTUAL, &timer, NULL)) THREAD_ERROR("Setitimer error.")
 
     return SUCCESS;
 }
@@ -371,7 +370,7 @@ int uthread_resume(int tid) {
 }
 
 int uthread_sleep(int num_quantums) {
-    return manager.sleepThread(num_quantums); // TODO: how?
+    return manager.sleepThread(num_quantums);
 }
 
 int uthread_get_tid() {
