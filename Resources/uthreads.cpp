@@ -179,8 +179,10 @@ public:
             queueRunningThread(BLOCKED);
             // TODO: Reset timer...
         }
-        if (threads[tid]->getState() == READY)
+        if (threads[tid]->getState() == READY){
+            threads[tid]->setState(BLOCKED);
             thread_queue.remove(tid);
+        }
         return SUCCESS;
     }
 

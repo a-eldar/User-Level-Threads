@@ -74,8 +74,6 @@ void test_spawn_too_many(){
     assert(uthread_spawn(entry_point_timer) == -1);
     for (int i=1;i<=99;++i){
         assert(uthread_terminate(i) == SUCCESS);
-        std::cout<<i<<std::endl;
-
     }
     printf("Passed spawn_too_many Test!\n");
 }
