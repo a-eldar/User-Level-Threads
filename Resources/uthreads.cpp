@@ -160,7 +160,7 @@ public:
 
         if (threads[tid]->getState() == READY)
             thread_queue.remove(tid);
-        sleeping_threads.remove_if([&tid](const std::pair<int, int>& pair) {return pair.first == tid;});
+        removeSleepingTid(tid);
         delete threads[tid];
         threads[tid] = nullptr;
         num_threads--;
@@ -171,7 +171,8 @@ public:
         return SUCCESS;
     }
 
-    int blockThread(int tid) {
+
+    int blockThread(int tid, bool to_sleep=false) {
         if (!isTidValid(tid, false)) return FAILURE;
 
         if (threads[tid]->getState() == RUNNING) {
@@ -182,6 +183,9 @@ public:
         if (threads[tid]->getState() == READY){
             threads[tid]->setState(BLOCKED);
             thread_queue.remove(tid);
+        }
+        if (threads[tid]->getState() == BLOCKED && !to_sleep){
+            removeSleepingTid(tid);
         }
         return SUCCESS;
     }
@@ -200,7 +204,7 @@ public:
         if (running_thread_tid == 0) return FAILURE;
         if (threads[running_thread_tid]->getState() == BLOCKED) return SUCCESS;
         sleeping_threads.emplace_back(running_thread_tid, num_quantums);
-        blockThread(running_thread_tid);
+        blockThread(running_thread_tid, true);
         return SUCCESS;
     }
 
@@ -294,6 +298,10 @@ private:
             threads[running_thread_tid]->setState(RUNNING);
             siglongjmp(threads[running_thread_tid]->getEnv(), 1);
         }
+    }
+
+    void removeSleepingTid(int tid) {
+        sleeping_threads.remove_if([&tid](const std::pair<int, int>& pair) {return pair.first == tid;});
     }
 };
 
