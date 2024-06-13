@@ -221,7 +221,7 @@ public:
     }
 
     ~UThreadManager() {
-        for (const auto& thread_ptr : threads) {
+        for (auto& thread_ptr : threads) {
             delete thread_ptr;
         }
     }
@@ -357,7 +357,6 @@ int uthread_spawn(thread_entry_point entry_point) {
 
 int uthread_terminate(int tid) {
     if (tid == 0) {
-        manager.~UThreadManager();
         exit(SUCCESS);
     }
     return manager.terminateThread(tid);
