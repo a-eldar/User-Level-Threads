@@ -164,9 +164,10 @@ public:
         delete threads[tid];
         threads[tid] = nullptr;
         num_threads--;
-
-        num_quantums++;
-        queueRunningThread();
+        if (tid == running_thread_tid){
+          num_quantums++;
+          queueRunningThread();
+        }
         return SUCCESS;
     }
 
