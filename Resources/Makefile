@@ -22,11 +22,9 @@ ARFLAGS = rvs
 
 all: $(TARGETS)
 
-$(TARGETS): $(CODEOBJ)
-	$(AR) $(ARFLAGS) $@ $^
-
-$(CODEOBJ): $(EXESRC)
-	$(CXX) $(CXXFLAGS) $@ $^
+$(TARGETS): $(EXESRC)
+	$(CXX) $(CXXFLAGS) $^
+	$(AR) $(ARFLAGS) $@ $(CODEOBJ)
 
 clean:
 	$(RM) $(TARGETS) $(CODEOBJ)
